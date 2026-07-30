@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FileProcessing.Api/FileProcessing.Api.csproj" />
+    <Project Path="src/FileProcessing.Application/FileProcessing.Application.csproj" />
+    <Project Path="src/FileProcessing.Contracts/FileProcessing.Contracts.csproj" />
+    <Project Path="src/FileProcessing.Domain/FileProcessing.Domain.csproj" />
+    <Project Path="src/FileProcessing.Infrastructure/FileProcessing.Infrastructure.csproj" />
+    <Project Path="src/FileProcessing.Shared/FileProcessing.Shared.csproj" />
+    <Project Path="src/FileProcessing.Worker/FileProcessing.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />
+    <Project Path="tests/UnitTests/UnitTests.csproj" />
+  </Folder>
+</Solution>
