@@ -1,6 +1,6 @@
 # Distributed File Processing Platform
 
-A local-first .NET 10 platform that streams uploads to MinIO, records state in PostgreSQL, publishes durable RabbitMQ jobs, and processes files in horizontally scalable workers with ClamAV, Tesseract OCR, thumbnails, notifications, auditing, retries, Hangfire, Redis, structured logs, metrics, traces, and health checks.
+A local-first .NET 10 reference platform that spools uploads to temporary storage, records state in PostgreSQL, publishes RabbitMQ jobs, and processes files in horizontally scalable workers with ClamAV, Tesseract OCR, thumbnails, notifications, auditing, retries, Hangfire, Redis, structured logs, metrics, traces, and health checks.
 
 ## Architecture and workflow
 
@@ -40,11 +40,13 @@ docker/                            reserved operational assets
 - Optional host development: .NET SDK 10.0.302 or newer
 - About 6 GB free RAM while ClamAV initializes its signatures
 
-The checked-in credentials are local-development values. Change `Authentication`, PostgreSQL, RabbitMQ, and MinIO secrets before sharing a reachable environment.
+Credentials are not committed. Copy `.env.example` to `.env` and replace every placeholder before starting Compose. Never reuse local values in a shared environment.
 
 ## Run everything
 
 ```powershell
+Copy-Item .env.example .env
+# Replace every placeholder in .env.
 docker compose up --build --scale worker=2
 ```
 
@@ -53,8 +55,8 @@ First startup can take several minutes because ClamAV downloads signatures. Wait
 - Swagger: http://localhost:8080/swagger
 - Health: http://localhost:8080/health
 - Hangfire: http://localhost:8080/hangfire (loopback only)
-- RabbitMQ: http://localhost:15672 (`fileprocessing` / `local_dev_password`)
-- MinIO: http://localhost:9001 (`minioadmin` / `minioadmin`)
+- RabbitMQ: http://localhost:15672 (user `fileprocessing`; password from `.env`)
+- MinIO: http://localhost:9001 (credentials from `.env`)
 
 Stop without deleting data with `docker compose down`. To intentionally remove local data, run `docker compose down --volumes`.
 
@@ -82,11 +84,11 @@ DELETE requires an `admin` JWT. Downloads are allowed only after completion and 
 
 ## Validation and processing
 
-Allowed types are PDF, DOCX, XLSX, TXT, PNG, JPEG, and TIFF. The API enforces configured size, extension, MIME type, SHA-256 duplicate detection, and signatures for PDF, Office ZIP, PNG, and JPEG before queueing. Upload content is streamed into a bounded buffer for hashing/signature validation and then into MinIO. Set `FileProcessing:MaxFileSizeBytes` to change the 100 MiB default.
+Allowed types are PDF, DOCX, XLSX, TXT, PNG, JPEG, and TIFF. The API enforces configured size, extension, MIME type, SHA-256 duplicate detection, and signatures for PDF, Office ZIP, PNG, and JPEG before queueing. Upload content is spooled to a temporary file for hashing/signature validation and then streamed into MinIO. This bounds managed-memory use but requires temporary disk capacity up to the configured upload limit. Set `FileProcessing:MaxFileSizeBytes` to change the 100 MiB default.
 
 Workers use ClamAV's INSTREAM protocol. Infected files stop at `VirusDetected`. Text files are read directly; other clean files invoke Tesseract. Image thumbnails preserve aspect ratio within `Thumbnails:Width` and `Height`. OCR text and thumbnails are written to MinIO. Configure `Notifications:WebhookUrl` to receive JSON events.
 
-Transient consumer failures are negatively acknowledged to the dead-letter exchange. Operators can call the retry endpoint; Hangfire also republishes up to 100 failed jobs hourly. Attempts are capped by `FileProcessing:MaxRetries`. Completed jobs are idempotent. Increase throughput with `docker compose up --scale worker=4`; RabbitMQ prefetch controls per-consumer concurrency.
+Consumer failures are negatively acknowledged to the dead-letter exchange. Operators can call the retry endpoint; Hangfire also republishes up to 100 failed jobs hourly. Attempts are capped by `FileProcessing:MaxRetries`. Completed jobs are idempotent. Increase throughput with `docker compose up --scale worker=4`; RabbitMQ prefetch controls per-consumer concurrency.
 
 ## Configuration
 
@@ -110,6 +112,8 @@ docker compose config --quiet
 ```
 
 Unit tests verify state/history invariants. The integration project is wired to the API and currently checks serialized queue contracts. A live end-to-end check requires the Compose dependencies: upload the EICAR test file and confirm `VirusDetected`, then upload a clean image and observe `Completed`, OCR/thumbnail objects in MinIO, history rows in PostgreSQL, and acknowledged messages in RabbitMQ.
+
+See [architecture](docs/architecture.md), [verification scope](docs/verification.md), and the [transactional-outbox decision](docs/adr/0002-transactional-outbox.md). The current database commit and RabbitMQ publish are not atomic; that gap must be closed before calling the ingestion path production-grade.
 
 ## Operations and troubleshooting
 
