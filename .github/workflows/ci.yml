@@ -1,0 +1,18 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with: { dotnet-version: 10.0.x }
+      - run: dotnet restore DistributedFileProcessing.slnx
+      - run: dotnet format DistributedFileProcessing.slnx --verify-no-changes --no-restore
+      - run: dotnet build DistributedFileProcessing.slnx -c Release --no-restore
+      - run: dotnet test DistributedFileProcessing.slnx -c Release --no-build --no-restore
+      - run: dotnet list DistributedFileProcessing.slnx package --vulnerable --include-transitive
+      - run: docker compose --env-file .env.example config --quiet

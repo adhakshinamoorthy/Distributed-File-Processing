@@ -2,13 +2,13 @@ name: distributed-file-processing
 services:
   postgres:
     image: postgres:18-alpine
-    environment: { POSTGRES_DB: fileprocessing, POSTGRES_USER: fileprocessing, POSTGRES_PASSWORD: local_dev_password }
+    environment: { POSTGRES_DB: fileprocessing, POSTGRES_USER: fileprocessing, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}" }
     ports: ["5432:5432"]
     volumes: ["postgres-data:/var/lib/postgresql/data"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U fileprocessing -d fileprocessing"], interval: 5s, timeout: 5s, retries: 20 }
   rabbitmq:
     image: rabbitmq:4-management-alpine
-    environment: { RABBITMQ_DEFAULT_USER: fileprocessing, RABBITMQ_DEFAULT_PASS: local_dev_password }
+    environment: { RABBITMQ_DEFAULT_USER: fileprocessing, RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}" }
     ports: ["5672:5672", "15672:15672"]
     volumes: ["rabbitmq-data:/var/lib/rabbitmq"]
     healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 5s, timeout: 5s, retries: 20 }
@@ -21,7 +21,7 @@ services:
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
-    environment: { MINIO_ROOT_USER: minioadmin, MINIO_ROOT_PASSWORD: minioadmin }
+    environment: { MINIO_ROOT_USER: "${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env}", MINIO_ROOT_PASSWORD: "${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env}" }
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio-data:/data"]
     healthcheck: { test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"], interval: 5s, timeout: 5s, retries: 20 }
@@ -32,7 +32,18 @@ services:
     healthcheck: { test: ["CMD-SHELL", "echo PING | nc localhost 3310 | grep PONG"], interval: 15s, timeout: 5s, retries: 40, start_period: 60s }
   api:
     build: { context: ., dockerfile: src/FileProcessing.Api/Dockerfile }
-    environment: { ASPNETCORE_URLS: "http://+:8080", ASPNETCORE_ENVIRONMENT: Development, OTEL_EXPORTER_OTLP_ENDPOINT: "" }
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_ENVIRONMENT: Development
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=fileprocessing;Username=fileprocessing;Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Authentication__JwtKey: "${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env}"
+      Authentication__ApiKey: "${FILE_PROCESSING_API_KEY:?Set FILE_PROCESSING_API_KEY in .env}"
+      RabbitMq__UserName: fileprocessing
+      RabbitMq__Password: "${RABBITMQ_PASSWORD}"
+      Minio__AccessKey: "${MINIO_ACCESS_KEY}"
+      Minio__SecretKey: "${MINIO_SECRET_KEY}"
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -43,6 +54,13 @@ services:
   worker:
     build: { context: ., dockerfile: src/FileProcessing.Worker/Dockerfile }
     deploy: { replicas: 2 }
+    environment:
+      ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=fileprocessing;Username=fileprocessing;Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      RabbitMq__UserName: fileprocessing
+      RabbitMq__Password: "${RABBITMQ_PASSWORD}"
+      Minio__AccessKey: "${MINIO_ACCESS_KEY}"
+      Minio__SecretKey: "${MINIO_SECRET_KEY}"
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
